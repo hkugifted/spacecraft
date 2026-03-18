@@ -197,24 +197,53 @@
             }
 
             createTextLabel(text) {
+                // HIGH-DPI AWARE canvas (crisp on ALL screens)
+                const dpr = window.devicePixelRatio || 1; // Auto-detects laptop/desktop
                 const canvas = document.createElement('canvas');
                 const context = canvas.getContext('2d');
-                canvas.width = 512;
-                canvas.height = 128;
 
+                // Internal resolution (very high for sharpness)
+                const baseWidth = 1024;
+                const baseHeight = 256;
+
+                // Scale up for high DPI screens
+                canvas.width = baseWidth * dpr;
+                canvas.height = baseHeight * dpr;
+
+                // CSS size keeps it logically the same size
+                canvas.style.width = `${baseWidth}px`;
+                canvas.style.height = `${baseHeight}px`;
+
+                // Scale the drawing context so we can draw normally
+                context.scale(dpr, dpr);
+
+                // Clear background (transparent)
                 context.fillStyle = 'rgba(0, 0, 0, 0)';
-                context.fillRect(0, 0, canvas.width, canvas.height);
-                
-                context.font = 'bold 60px Arial, Microsoft JhengHei, sans-serif';
+                context.fillRect(0, 0, baseWidth, baseHeight);
+
+                // Setup crisp font settings
+                context.font = 'bold 140px Arial, Microsoft JhengHei, sans-serif';
                 context.fillStyle = '#ffffff';
                 context.textAlign = 'center';
                 context.textBaseline = 'middle';
+                
+                // Thick stroke for visibility
                 context.strokeStyle = '#000000';
-                context.lineWidth = 3;
-                context.strokeText(text, 256, 64);
-                context.fillText(text, 256, 64);
+                context.lineWidth = 6;
+                
+                // Draw precisely in the center of the base dimensions
+                context.strokeText(text, baseWidth / 2, baseHeight / 2);
+                context.fillText(text, baseWidth / 2, baseHeight / 2);
 
                 const texture = new THREE.CanvasTexture(canvas);
+
+                // These filters ensure it stays sharp when resized in 3D
+                texture.minFilter = THREE.LinearFilter;
+                texture.magFilter = THREE.LinearFilter;
+                // Anisotropy helps keep text sharp when viewed at angles
+                texture.anisotropy = this.renderer.capabilities.getMaxAnisotropy();
+
+                // 8x2 matches the ratio of 1024x256 (4:1)
                 const textGeometry = new THREE.PlaneGeometry(8, 2);
                 const textMaterial = new THREE.MeshBasicMaterial({ 
                     map: texture, 
@@ -222,12 +251,12 @@
                     opacity: 0.95,
                     side: THREE.DoubleSide
                 });
-                
+
                 const textMesh = new THREE.Mesh(textGeometry, textMaterial);
-                
+    
                 const textGroup = new THREE.Group();
                 textGroup.add(textMesh);
-                
+    
                 textGroup.userData = { isText: true };
                 return textGroup;
             }
