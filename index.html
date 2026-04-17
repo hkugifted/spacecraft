@@ -40,6 +40,8 @@
             position: relative;
             width: 100vw;
             height: 100vh;
+            /* Prevents screen panning/zooming while dragging on smartphones */
+            touch-action: none; 
         }
 
         #instructions {
@@ -116,7 +118,6 @@
         import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
         import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 
-        // Spacecraft data with labels
         const spacecraftData = [
             { url: 'https://cdn.jsdelivr.net/gh/cocoli1120/sputnik1@main/sputnik1.glb', label: '史普尼克一號' },
             { url: 'https://cdn.jsdelivr.net/gh/cocoli1120/vostok1@main/vostok1.glb', label: '東方一號' },
@@ -127,11 +128,10 @@
             { url: 'https://cdn.jsdelivr.net/gh/cocoli1120/starship@main/starship.glb', label: '星艦' }
         ];
 
-        // Size configuration
         const BASE_SCALE = 4.2;
         const MAX_BOUNDING_SIZE = 8.5;
         const SPACING_MULTIPLIER = 8.0;
-        const LABEL_SPACING = 9.5;  // Space between labels to prevent overlap
+        const LABEL_SPACING = 9.5;  
 
         class SpacecraftDisplay {
             constructor() {
@@ -142,7 +142,7 @@
                 this.textGroups = [];
                 this.allDraggableGroups = [];
                 this.raycaster = new THREE.Raycaster();
-                this.mouse = new THREE.Vector2();
+                this.pointer = new THREE.Vector2();
                 this.selectedGroup = null;
                 this.offset = new THREE.Vector3();
 
@@ -160,7 +160,6 @@
                 this.renderer.toneMappingExposure = 1.4;
                 container.appendChild(this.renderer.domElement);
 
-                // Lighting
                 const ambientLight = new THREE.AmbientLight(0x606060, 1.0);
                 this.scene.add(ambientLight);
 
@@ -197,53 +196,40 @@
             }
 
             createTextLabel(text) {
-                // HIGH-DPI AWARE canvas (crisp on ALL screens)
-                const dpr = window.devicePixelRatio || 1; // Auto-detects laptop/desktop
+                const dpr = window.devicePixelRatio || 1; 
                 const canvas = document.createElement('canvas');
                 const context = canvas.getContext('2d');
 
-                // Internal resolution (very high for sharpness)
                 const baseWidth = 1024;
                 const baseHeight = 256;
 
-                // Scale up for high DPI screens
                 canvas.width = baseWidth * dpr;
                 canvas.height = baseHeight * dpr;
 
-                // CSS size keeps it logically the same size
                 canvas.style.width = `${baseWidth}px`;
                 canvas.style.height = `${baseHeight}px`;
 
-                // Scale the drawing context so we can draw normally
                 context.scale(dpr, dpr);
 
-                // Clear background (transparent)
                 context.fillStyle = 'rgba(0, 0, 0, 0)';
                 context.fillRect(0, 0, baseWidth, baseHeight);
 
-                // Setup crisp font settings
                 context.font = 'bold 140px Arial, Microsoft JhengHei, sans-serif';
                 context.fillStyle = '#ffffff';
                 context.textAlign = 'center';
                 context.textBaseline = 'middle';
                 
-                // Thick stroke for visibility
                 context.strokeStyle = '#000000';
                 context.lineWidth = 6;
                 
-                // Draw precisely in the center of the base dimensions
                 context.strokeText(text, baseWidth / 2, baseHeight / 2);
                 context.fillText(text, baseWidth / 2, baseHeight / 2);
 
                 const texture = new THREE.CanvasTexture(canvas);
-
-                // These filters ensure it stays sharp when resized in 3D
                 texture.minFilter = THREE.LinearFilter;
                 texture.magFilter = THREE.LinearFilter;
-                // Anisotropy helps keep text sharp when viewed at angles
                 texture.anisotropy = this.renderer.capabilities.getMaxAnisotropy();
 
-                // 8x2 matches the ratio of 1024x256 (4:1)
                 const textGeometry = new THREE.PlaneGeometry(8, 2);
                 const textMaterial = new THREE.MeshBasicMaterial({ 
                     map: texture, 
@@ -253,27 +239,17 @@
                 });
 
                 const textMesh = new THREE.Mesh(textGeometry, textMaterial);
-    
                 const textGroup = new THREE.Group();
                 textGroup.add(textMesh);
-    
                 textGroup.userData = { isText: true };
                 return textGroup;
             }
 
             arrangeLabelsRandomly(labels) {
-                // Shuffle labels randomly
                 const shuffled = [...labels].sort(() => Math.random() - 0.5);
-                
-                // Arrange in horizontal line at bottom with anti-overlap spacing
                 const startX = -(shuffled.length - 1) * LABEL_SPACING / 2;
-                
                 shuffled.forEach((textGroup, i) => {
-                    textGroup.position.set(
-                        startX + i * LABEL_SPACING,
-                        -12,
-                        0
-                    );
+                    textGroup.position.set(startX + i * LABEL_SPACING, -12, 0);
                 });
             }
 
@@ -281,11 +257,9 @@
                 const shuffledData = [...spacecraftData].sort(() => Math.random() - 0.5);
                 const loader = new GLTFLoader();
                 
-                // First load all spacecrafts (random horizontal arrangement)
-                for (let i = 0; i < shuffledData.length; i++) {
-                    try {
-                        const gltf = await loader.loadAsync(shuffledData[i].url);
-                        
+                // Concurrent loading logic to speed up fetching 
+                const loadPromises = shuffledData.map((data, i) => {
+                    return loader.loadAsync(data.url).then((gltf) => {
                         const spacecraftGroup = new THREE.Group();
                         const model = gltf.scene;
                         
@@ -321,13 +295,14 @@
                         this.scene.add(spacecraftGroup);
                         this.spacecraftGroups.push(spacecraftGroup);
                         this.allDraggableGroups.push(spacecraftGroup);
-                        
-                    } catch (error) {
+                    }).catch(error => {
                         console.warn(`Failed to load spacecraft ${i}:`, error);
-                    }
-                }
+                    });
+                });
 
-                // Create all text labels
+                // Wait for all models to finish downloading concurrently
+                await Promise.all(loadPromises);
+
                 shuffledData.forEach((data) => {
                     const textGroup = this.createTextLabel(data.label);
                     this.scene.add(textGroup);
@@ -335,17 +310,18 @@
                     this.allDraggableGroups.push(textGroup);
                 });
 
-                // Arrange labels in random horizontal line (no overlap)
                 this.arrangeLabelsRandomly(this.textGroups);
             }
 
             setupEventListeners() {
                 const container = this.renderer.domElement;
                 
-                container.addEventListener('mousedown', (event) => this.onMouseDown(event));
-                container.addEventListener('mousemove', (event) => this.onMouseMove(event));
-                container.addEventListener('mouseup', () => this.onMouseUp());
-                container.addEventListener('mouseleave', () => this.onMouseUp());
+                // Upgraded to pointer events to support smartphones, tablets, and laptops uniformly
+                container.addEventListener('pointerdown', (event) => this.onPointerDown(event));
+                container.addEventListener('pointermove', (event) => this.onPointerMove(event));
+                container.addEventListener('pointerup', () => this.onPointerUp());
+                container.addEventListener('pointercancel', () => this.onPointerUp());
+                container.addEventListener('pointerleave', () => this.onPointerUp());
                 
                 window.addEventListener('resize', () => this.onWindowResize());
                 
@@ -354,12 +330,12 @@
                 });
             }
 
-            onMouseDown(event) {
+            onPointerDown(event) {
                 const rect = this.renderer.domElement.getBoundingClientRect();
-                this.mouse.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
-                this.mouse.y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
+                this.pointer.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
+                this.pointer.y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
 
-                this.raycaster.setFromCamera(this.mouse, this.camera);
+                this.raycaster.setFromCamera(this.pointer, this.camera);
                 const intersects = this.raycaster.intersectObjects(this.allDraggableGroups, true);
 
                 if (intersects.length > 0) {
@@ -380,19 +356,19 @@
                 return parent;
             }
 
-            onMouseMove(event) {
+            onPointerMove(event) {
                 if (!this.selectedGroup) return;
 
                 const rect = this.renderer.domElement.getBoundingClientRect();
-                this.mouse.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
-                this.mouse.y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
+                this.pointer.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
+                this.pointer.y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
 
-                this.selectedGroup.position.x = this.mouse.x * 40;
-                this.selectedGroup.position.y = this.mouse.y * 28;
+                this.selectedGroup.position.x = this.pointer.x * 40;
+                this.selectedGroup.position.y = this.pointer.y * 28;
                 this.selectedGroup.position.z = 0;
             }
 
-            onMouseUp() {
+            onPointerUp() {
                 this.selectedGroup = null;
             }
 
